@@ -153,6 +153,8 @@ for i in trange(len(annotation_obj["images"])):
     res_dict["annotations"] += anns
     for i in range(len(mask)):
         image_out_path.parent.mkdir(parents=True,exist_ok=True)
+        path, ext = image_out_path.as_posix().rsplit(".")
+        # w_path = path + "_" + mask[i] + "." + ext
         w_path = image_out_path.as_posix()
         # print(w_path)
         img = masked_image[i]
