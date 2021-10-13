@@ -15,8 +15,44 @@ import requests
 from zipfile import ZipFile
 from tqdm import tqdm
 import bz2, shutil
+from collections import OrderedDict
 
+WFLW_98_PTS_MODEL_IDX = {
+	"jaw" : list(range(0,33)),
+	"left_eyebrow" : list(range(33,42)),
+	"right_eyebrow" : list(range(42,51)),
+	"nose" : list(range(51, 60)),
+	"left_eye" : list(range(60, 68))+[96],
+	"right_eye" : list(range(68, 76))+[97],
+	"left_eye_poly": list(range(60, 68)),
+	"right_eye_poly": list(range(68, 76)),
+	"mouth" : list(range(76, 96)),
+	"eyes" : list(range(60, 68))+[96]+list(range(68, 76))+[97],
+	"eyebrows" : list(range(33,42))+list(range(42,51)),
+	"eyes_and_eyebrows" : list(range(33,42))+list(range(42,51))+list(range(60, 68))+[96]+list(range(68, 76))+[97],
+}
 
+DLIB_68_TO_WFLW_98_IDX_MAPPING = OrderedDict()
+DLIB_68_TO_WFLW_98_IDX_MAPPING.update(dict(zip(range(0,17),range(0,34,2)))) # jaw | 17 pts
+DLIB_68_TO_WFLW_98_IDX_MAPPING.update(dict(zip(range(17,22),range(33,38)))) # left upper eyebrow points | 5 pts
+DLIB_68_TO_WFLW_98_IDX_MAPPING.update(dict(zip(range(22,27),range(42,47)))) # right upper eyebrow points | 5 pts
+DLIB_68_TO_WFLW_98_IDX_MAPPING.update(dict(zip(range(27,36),range(51,60)))) # nose points | 9 pts
+DLIB_68_TO_WFLW_98_IDX_MAPPING.update({36:60}) # left eye points | 6 pts
+DLIB_68_TO_WFLW_98_IDX_MAPPING.update({37:61})
+DLIB_68_TO_WFLW_98_IDX_MAPPING.update({38:63})
+DLIB_68_TO_WFLW_98_IDX_MAPPING.update({39:64})
+DLIB_68_TO_WFLW_98_IDX_MAPPING.update({40:65})
+DLIB_68_TO_WFLW_98_IDX_MAPPING.update({41:67})
+DLIB_68_TO_WFLW_98_IDX_MAPPING.update({42:68}) # right eye | 6 pts
+DLIB_68_TO_WFLW_98_IDX_MAPPING.update({43:69})
+DLIB_68_TO_WFLW_98_IDX_MAPPING.update({44:71})
+DLIB_68_TO_WFLW_98_IDX_MAPPING.update({45:72})
+DLIB_68_TO_WFLW_98_IDX_MAPPING.update({46:73})
+DLIB_68_TO_WFLW_98_IDX_MAPPING.update({47:75})
+DLIB_68_TO_WFLW_98_IDX_MAPPING.update(dict(zip(range(48,68),range(76,96)))) # mouth points | 20 pts
+WFLW_98_TO_DLIB_68_IDX_MAPPING = {v:k for k,v in DLIB_68_TO_WFLW_98_IDX_MAPPING.items()}
+from pprint import pprint
+pprint(WFLW_98_TO_DLIB_68_IDX_MAPPING)
 def download_dlib_model():
     print_orderly("Get dlib model", 60)
     dlib_model_link = "http://dlib.net/files/shape_predictor_68_face_landmarks.dat.bz2"
@@ -567,6 +603,13 @@ def rect_to_bb(rect):
     y2 = rect.bottom()
     return (x1, x2, y2, x1)
 
+def rect_to_bb_json(rect):
+    x1 = rect[0]
+    x2 = rect[2]
+    y1 = rect[1]
+    y2 = rect[3]
+    return (x1, x2, y2, x1)
+
 
 def mask_image(image_path, args):
     # Read the image
@@ -574,6 +617,7 @@ def mask_image(image_path, args):
     original_image = image.copy()
     # gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     gray = image
+    # [ltrb]
     face_locations = args.detector(gray, 1)
     mask_type = args.mask_type
     verbose = args.verbose
@@ -596,8 +640,11 @@ def mask_image(image_path, args):
     mask_binary_array = []
     mask = []
     for (i, face_location) in enumerate(face_locations):
+        # 68 x 2
         shape = args.predictor(gray, face_location)
+        # same but np
         shape = face_utils.shape_to_np(shape)
+        # dictionary of places in face
         face_landmarks = shape_to_landmarks(shape)
         face_location = rect_to_bb(face_location)
         # draw_landmarks(face_landmarks, image)
@@ -643,12 +690,12 @@ def is_image(path):
         image_extensions = ["png", "PNG", "jpg", "JPG"]
 
         if extensions[1:] in image_extensions:
-            return True 
+            return True
         else:
             print("Please input image file. png / jpg")
-            return False 
-    except: 
-        return False 
+            return False
+    except:
+        return False
 
 
 def get_available_mask_types(config_filename="masks/masks.cfg"):
@@ -681,3 +728,116 @@ def display_MaskTheFace():
         for line in file:
             cc = 1
             print(line, end="")
+
+
+def my_mask_image(image_path, args, annotations):
+    # Read the image
+    image = cv2.imread(image_path.as_posix())
+    original_image = image.copy()
+    # gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    gray = image
+    face_locations = [np.array(x["bbox"], dtype=int) for x in annotations]
+
+    mask_type = args.mask_type
+    verbose = args.verbose
+    if args.code:
+        ind = random.randint(0, len(args.code_count) - 1)
+        mask_dict = args.mask_dict_of_dict[ind]
+        mask_type = mask_dict["type"]
+        args.color = mask_dict["color"]
+        args.pattern = mask_dict["texture"]
+        args.code_count[ind] += 1
+
+    elif mask_type == "random":
+        available_mask_types = get_available_mask_types()
+        mask_type = random.choice(available_mask_types)
+
+    if verbose:
+        tqdm.write("Faces found: {:2d}".format(len(face_locations)))
+
+    # Process each face in the image
+    masked_images = []
+    mask_binary_array = []
+    mask = []
+    # for (i, face_location) in enumerate(face_locations):
+    #     # determine the facial landmarks for the face region, then
+    #     # convert the facial landmark (x, y)-coordinates to a NumPy
+    #     # array
+    #     (x, y, x2, y2) = np.array(face_location,dtype=int).tolist()
+    #     cv2.rectangle(image, (x, y), (x2,y2), (0, 255, 0), 2)
+
+    #     # loop over the (x, y)-coordinates for the facial landmarks
+    #     # and draw them on the image
+    #     # print(rect["keypoints"])
+    #     shape = annotations[i]["keypoints"]
+    #     shape = np.array(shape).reshape(-1, 2)
+    #     if shape.shape[0] == 98:
+    #         shape_ = np.zeros((68,2), dtype=int)
+    #         for i in range(68):
+    #             shape_[i] = shape[DLIB_68_TO_WFLW_98_IDX_MAPPING[i]]
+    #         shape = shape_
+    #     # print(shape.shape)
+    #     # print(shape)
+    #     face_landmarks = shape_to_landmarks(shape)
+    #     for (x, y) in face_landmarks["chin"]:
+    #         cv2.circle(image, (x, y), 1, (0, 0, 255), -1)
+    #     # show the output image with the face detections + facial landmarks
+    # cv2.imshow("Output", image)
+    # cv2.waitKey(0)
+
+    for (i, face_location) in enumerate(face_locations):
+        if random.random() < 0.:
+            annotations[i]["has_mask"] = False
+            continue
+        else:
+            annotations[i]["has_mask"] = True
+        shape = annotations[i]["keypoints"]
+        shape = np.array(shape).reshape(-1, 2)
+        if shape.shape[0] == 98:
+            shape_ = np.zeros((68,2), dtype=int)
+            for i in range(68):
+                shape_[i] = shape[DLIB_68_TO_WFLW_98_IDX_MAPPING[i]]
+            shape = shape_
+
+        face_landmarks = shape_to_landmarks(shape)
+        face_location = rect_to_bb_json(face_location)
+        # draw_landmarks(face_landmarks, image)
+        # try:
+        six_points_on_face, angle = get_six_points(face_landmarks, image)
+        # except Exception as e:
+        #     print(f"Cant find six point for one annotation of {image_path.stem}.")
+            # annotations[i]["has_mask"] = False
+            # continue
+        mask = []
+        if mask_type != "all":
+            if len(masked_images) > 0:
+                image = masked_images.pop(0)
+            image, mask_binary = mask_face(
+                image, face_location, six_points_on_face, angle, args, type=mask_type
+            )
+
+            # compress to face tight
+            face_height = face_location[2] - face_location[0]
+            face_width = face_location[1] - face_location[3]
+            masked_images.append(image)
+            mask_binary_array.append(mask_binary)
+            mask.append(mask_type)
+        else:
+            available_mask_types = get_available_mask_types()
+            for m in range(len(available_mask_types)):
+                if len(masked_images) == len(available_mask_types):
+                    image = masked_images.pop(m)
+                img, mask_binary = mask_face(
+                    image,
+                    face_location,
+                    six_points_on_face,
+                    angle,
+                    args,
+                    type=available_mask_types[m],
+                )
+                masked_images.insert(m, img)
+                mask_binary_array.insert(m, mask_binary)
+            mask = available_mask_types
+            cc = 1
+
+    return masked_images, mask, mask_binary_array, original_image

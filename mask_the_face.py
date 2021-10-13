@@ -4,8 +4,8 @@
 
 import argparse
 import dlib
+import json
 from utils.aux_functions import *
-
 
 
 # Command-line input setup
@@ -15,9 +15,10 @@ parser = argparse.ArgumentParser(
 parser.add_argument(
     "--path",
     type=str,
-    default="",
+    default="/home/termanteus/workspace/face/data/pose/300W/300w/images/afw",
     help="Path to either the folder containing images or the image itself",
 )
+
 parser.add_argument(
     "--mask_type",
     type=str,
