@@ -6,19 +6,25 @@ import argparse
 from collections import defaultdict
 
 from tqdm import trange
-import dlib
 import json
 import copy
 from pathlib import Path
 from utils.aux_functions import *
-from utils.aux_functions import my_mask_image as mask_image
+from utils.aux_functions import my_mask_image_5kpts as mask_image
+import numpy as np
+import shutil
+import dlib
+
 
 # Command-line input setup
 parser = argparse.ArgumentParser(
     description="MaskTheFace - Python code to mask faces dataset"
 )
 parser.add_argument(
-    "--anno_path", type=Path, default="/home/termanteus/workspace/face/data/pose/WFLW/WFLW/annotations/face_landmarks_wflw_train.json", help="Path to either the annotation json",
+    "--anno_path",
+    type=Path,
+    default="/home/ubuntu/workspace/trungdt21/pose/data/COCO-2017/raw/annotations/train2017.json",
+    help="Path to either the annotation json",
 )
 parser.add_argument(
     "--mask_type",
@@ -75,8 +81,14 @@ parser.add_argument(
     help="If true, original image is also stored in the masked folder",
 )
 parser.set_defaults(feature=False)
-
 args = parser.parse_args()
+
+path_to_dlib_model = "dlib_models/shape_predictor_68_face_landmarks.dat"
+if not os.path.exists(path_to_dlib_model):
+    download_dlib_model()
+
+args.predictor = dlib.shape_predictor(path_to_dlib_model)
+
 
 # Extract data from code
 mask_code = "".join(args.code.split()).split(",")
@@ -104,60 +116,74 @@ for i, entry in enumerate(mask_code):
 with open(args.anno_path.as_posix(), "r") as js:
     annotation_obj = json.load(js)
 
-image_root = args.anno_path.parent.parent / "images"
-image_out_root = args.anno_path.parent.parent / "images_masked"
+image_root = args.anno_path.parent / "images"
+count = 1
+image_out_root = args.anno_path.parent / f"image_masked_v{count}"
+while image_out_root.exists():
+    count += 1
+    image_out_root = args.anno_path.parent / f"image_masked_v{count}"
+
 image_out_root.mkdir(parents=True, exist_ok=True)
 
 lookup_dict = defaultdict(list)
 
-if not (args.anno_path.parent.parent/"lookup_dict.json").exists():
+lookup_dict_path = args.anno_path.parent / f"{args.anno_path.stem}_lookup_dict_v2.json"
+
+if not lookup_dict_path.exists():
     print("Building look up dict from image_id -> list of its annotations....")
-    for i in trange(len(annotation_obj["images"])):
-        image_obj = annotation_obj["images"][i]
-        for ann in annotation_obj["annotations"]:
-            if ann["image_id"] == image_obj["id"]:
+    for ann in annotation_obj["annotations"]:
+        kpts = np.array(ann["landmarks"], dtype=int)
+        kpts = kpts.reshape(-1, 2)
+        ann["keypoints"] = kpts.flatten().tolist()
+        ann["bbox"] = ann["bbox"]
+        ann["bbox"][2] += ann["bbox"][0]
+        ann["bbox"][3] += ann["bbox"][1]
+        lookup_dict[str(ann["image_id"])].append(ann)
 
-                kpts = np.array(ann["keypoints"], dtype=int)
-                kpts = kpts.reshape(-1, 3)
-                kpts = kpts[:, :2]
-                ann["keypoints"] = kpts.flatten().tolist()
-                ann["bbox"][2] += ann["bbox"][0] 
-                ann["bbox"][3] += ann["bbox"][1] 
-                lookup_dict[str(image_obj["id"])].append(ann)
-
-    with open(args.anno_path.parent.parent/"lookup_dict.json", 'w') as f:
-        json.dump(lookup_dict, f)
+    with open(lookup_dict_path, "w") as f:
+        json.dump(lookup_dict, f, indent=2)
     print("Built look up dict done.")
 else:
     print("Reading pre-made lookup dict...")
-    with open(args.anno_path.parent.parent/"lookup_dict.json", 'r') as f:
+    with open(lookup_dict_path, "r") as f:
         lookup_dict = json.load(f)
     print("Loaded pre-made lookup dict.")
 
 res_dict = copy.deepcopy(annotation_obj)
 res_dict["annotations"] = []
 for i in trange(len(annotation_obj["images"])):
-    # if i > 100:
-    #     break
     image_obj = annotation_obj["images"][i]
     image_path = image_root / image_obj["file_name"]
+
     image_out_path = image_out_root / image_obj["file_name"]
 
-    anns = lookup_dict[str(image_obj["id"])]
+    anns = lookup_dict.get(str(image_obj["id"]), [])
     if len(anns) == 0:
-        print(f"Skipping image: {image_obj['file_name']} since it doesn't have any annotations.")
+        # print(
+        #     f"Skipping image: {image_obj['file_name']} since it doesn't have any annotations."
+        # )
         continue
     masked_image, mask, mask_binary_array, original_image = mask_image(
         image_path, args, anns
     )
     res_dict["annotations"] += anns
-    for i in range(len(mask)):
-        image_out_path.parent.mkdir(parents=True,exist_ok=True)
-        w_path = image_out_path.as_posix()
-        # print(w_path)
-        img = masked_image[i]
+    image_out_path.parent.mkdir(parents=True, exist_ok=True)
+    w_path = image_out_path.as_posix()
+    if len(mask) == 0:
+        img = cv2.imread(image_path.as_posix())
         cv2.imwrite(w_path, img)
+    else:
+        for i in range(len(mask)):
+            # print(w_path)
+            img = masked_image[i]
+            cv2.imwrite(w_path, img)
 
-with open((args.anno_path.parent.parent/"masked_annotations.json").as_posix(), 'w') as js:
-    json.dump(res_dict, js)
+with open(
+    (
+        args.anno_path.parent / f"{args.anno_path.stem}_masked_annotations_v2.json"
+    ).as_posix(),
+    "w",
+) as js:
+    json.dump(res_dict, js, indent=2)
+
 print("Processing Done")
