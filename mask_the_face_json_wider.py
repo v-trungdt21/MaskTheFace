@@ -12,8 +12,8 @@ from pathlib import Path
 from utils.aux_functions import *
 from utils.aux_functions import my_mask_image as mask_image
 import numpy as np
-import shutil
-import dlib
+# import shutil
+# import dlib
 
 
 # Command-line input setup
@@ -109,7 +109,7 @@ for i, entry in enumerate(mask_code):
 with open(args.anno_path.as_posix(), "r") as js:
     annotation_obj = json.load(js)
 
-image_root = args.anno_path.parent / "images"
+image_root = args.anno_path.parent.parent / "images"
 count = 1
 image_out_root = args.anno_path.parent / f"image_masked_v{count}"
 while image_out_root.exists():
@@ -125,8 +125,16 @@ lookup_dict_path = args.anno_path.parent / f"{args.anno_path.stem}_lookup_dict_v
 if not lookup_dict_path.exists():
     print("Building look up dict from image_id -> list of its annotations....")
     for ann in annotation_obj["annotations"]:
-        kpts = np.array(ann["landmarks"], dtype=int)
-        kpts = kpts.reshape(-1, 2)
+        if "face_kpts" in ann and ann["face_kpts"]:
+            kpts = np.array(ann["face_kpts"], dtype=int)
+            kpts = kpts.reshape(-1, 3)[:, :2]
+            landm_key = "face_kpts"
+        elif "landmarks" in ann and ann["landmarks"]:
+            kpts = np.array(ann["landmarks"], dtype=int)
+            kpts = kpts.reshape(-1, 2)
+        else:
+            continue
+
         ann["keypoints"] = kpts.flatten().tolist()
         ann["bbox"] = ann["bbox"]
         ann["bbox"][2] += ann["bbox"][0]
@@ -156,6 +164,10 @@ for i in trange(len(annotation_obj["images"])):
         #     f"Skipping image: {image_obj['file_name']} since it doesn't have any annotations."
         # )
         continue
+    
+    if not image_path.exists():
+        continue
+    
     masked_image, mask, mask_binary_array, original_image = mask_image(
         image_path, args, anns
     )
@@ -173,7 +185,7 @@ for i in trange(len(annotation_obj["images"])):
 
 with open(
     (
-        args.anno_path.parent / f"{args.anno_path.stem}_masked_annotations_v2.json"
+        args.anno_path.parent / f"{args.anno_path.stem}_masked_annotations_v{count}.json"
     ).as_posix(),
     "w",
 ) as js:

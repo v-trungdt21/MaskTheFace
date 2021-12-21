@@ -3,7 +3,7 @@
 # Email: aqeel.anwar@gatech.edu
 
 from configparser import ConfigParser
-import dlib
+# import dlib
 import cv2, math, os
 from PIL import Image, ImageDraw
 from tqdm import tqdm
@@ -441,7 +441,7 @@ def draw_landmarks(face_landmarks, image):
     d = ImageDraw.Draw(pil_image)
     for facial_feature in face_landmarks.keys():
         d.line(face_landmarks[facial_feature], width=5, fill="white")
-    pil_image.save("./test.png")
+    pil_image.save("./test2.png")
 
 
 def get_face_ellipse(face_landmark):
@@ -777,7 +777,7 @@ def my_mask_image(image_path, args, annotations, debug=False):
 
     if verbose:
         tqdm.write("Faces found: {:2d}".format(len(face_locations)))
-
+        
     # Process each face in the image
     masked_images = []
     mask_binary_array = []
@@ -809,12 +809,18 @@ def my_mask_image(image_path, args, annotations, debug=False):
     # cv2.waitKey(0)
 
     for (i, face_location) in enumerate(face_locations):
-        if random.random() < 0.4:
+        if random.random() < 0.0:
             annotations[i]["attributes"]["has_mask"] = False
             continue
         else:
             annotations[i]["attributes"]["has_mask"] = True
+
         shape = annotations[i]["keypoints"]
+        if shape[0] == -1:
+            print("Wrong shape")
+            annotations[i]["attributes"]["has_mask"] = False
+            continue
+
         shape = np.array(shape).reshape(-1, 2)
         if shape.shape[0] == 98:
             shape_ = np.zeros((68, 2), dtype=int)
@@ -822,6 +828,8 @@ def my_mask_image(image_path, args, annotations, debug=False):
                 shape_[i] = shape[DLIB_68_TO_WFLW_98_IDX_MAPPING[i]]
             shape = shape_
         elif shape.shape[0] != 68:
+            print("Not enough points", shape[0])
+            annotations[i]["attributes"]["has_mask"] = False
             continue
 
         face_landmarks = shape_to_landmarks(shape)
@@ -848,8 +856,8 @@ def my_mask_image(image_path, args, annotations, debug=False):
                 continue
 
             # compress to face tight
-            face_height = face_location[2] - face_location[0]
-            face_width = face_location[1] - face_location[3]
+            # face_height = face_location[2] - face_location[0]
+            # face_width = face_location[1] - face_location[3]
             masked_images.append(image)
             mask_binary_array.append(mask_binary)
             mask.append(mask_type)
