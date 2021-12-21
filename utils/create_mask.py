@@ -46,6 +46,7 @@ def texture_the_mask(mask_image, texture_path, intensity):
     bit_mask = mask_image[:, :, 3]
     mask_image = mask_image[:, :, 0:3]
     texture_image = cv2.imread(texture_path)
+    # print(texture_path)
     texture_image = cv2.resize(texture_image, (orig_shape[1], orig_shape[0]))
 
     mask_texture = cv2.addWeighted(

@@ -12,6 +12,7 @@ from pathlib import Path
 from utils.aux_functions import *
 from utils.aux_functions import my_mask_image as mask_image
 import numpy as np
+
 # import shutil
 # import dlib
 
@@ -164,18 +165,21 @@ for i in trange(len(annotation_obj["images"])):
         #     f"Skipping image: {image_obj['file_name']} since it doesn't have any annotations."
         # )
         continue
-    
+
     if not image_path.exists():
         continue
-    
+
     masked_image, mask, mask_binary_array, original_image = mask_image(
         image_path, args, anns
     )
     res_dict["annotations"] += anns
-    image_out_path.parent.mkdir(parents=True, exist_ok=True)
-    w_path = image_out_path.as_posix()
-    if len(mask) == 0:
-        img = cv2.imread(image_path.as_posix())
+    for i in range(len(mask)):
+        image_out_path.parent.mkdir(parents=True, exist_ok=True)
+        path, ext = image_out_path.as_posix().rsplit(".")
+        # w_path = path + "_" + mask[i] + "." + ext
+        w_path = image_out_path.as_posix()
+        # print(w_path)
+        img = masked_image[i]
         cv2.imwrite(w_path, img)
     else:
         for i in range(len(mask)):
@@ -185,7 +189,8 @@ for i in trange(len(annotation_obj["images"])):
 
 with open(
     (
-        args.anno_path.parent / f"{args.anno_path.stem}_masked_annotations_v{count}.json"
+        args.anno_path.parent
+        / f"{args.anno_path.stem}_masked_annotations_v{count}.json"
     ).as_posix(),
     "w",
 ) as js:
